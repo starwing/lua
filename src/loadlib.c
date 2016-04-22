@@ -220,8 +220,10 @@ static void lsys_unloadlib (void *lib) {
 
 
 static void *lsys_load (lua_State *L, const char *path, int seeglb) {
-  HMODULE lib = LoadLibraryExA(path, NULL, LUA_LLE_FLAGS);
+  HMODULE lib;
   (void)(seeglb);  /* not used: symbols are 'global' by default */
+  if (path == NULL) lib = GetModuleHandleA(NULL);
+  else lib = LoadLibraryExA(path, NULL, LUA_LLE_FLAGS);
   if (lib == NULL) pusherror(L);
   return lib;
 }
@@ -518,6 +520,25 @@ static int searcher_Croot (lua_State *L) {
 }
 
 
+static int searcher_Cbuiltin (lua_State *L) {
+  const char *name = luaL_checkstring(L, 1);
+  void *reg = lsys_load(L, NULL, 1);
+  lua_CFunction func;
+  if (reg == NULL)
+    return luaL_error(L, "error loading global module:\n\t%s",
+                          lua_tostring(L, -1));
+  name = luaL_gsub(L, name, ".", LUA_OFSEP);
+  name = lua_pushfstring(L, LUA_POF"%s", name);
+  func = lsys_sym(L, reg, name);
+  if (func == NULL) {
+    lua_pushfstring(L, "\n\tno global symbol '%s'", name);
+    return 1;
+  }
+  lua_pushcfunction(L, func);
+  return 1;
+}
+
+
 static int searcher_preload (lua_State *L) {
   const char *name = luaL_checkstring(L, 1);
   lua_getfield(L, LUA_REGISTRYINDEX, "_PRELOAD");
@@ -728,7 +749,7 @@ static const luaL_Reg ll_funcs[] = {
 
 static void createsearcherstable (lua_State *L) {
   static const lua_CFunction searchers[] =
-    {searcher_preload, searcher_Lua, searcher_C, searcher_Croot, NULL};
+    {searcher_preload, searcher_Lua, searcher_C, searcher_Croot, searcher_Cbuiltin, NULL};
   int i;
   /* create 'searchers' table */
   lua_createtable(L, sizeof(searchers)/sizeof(searchers[0]) - 1, 0);
